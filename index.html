@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 JetBot 프로젝트 상세 가이드</title>
+    <style>
+        /* Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f8;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        h1, h2, h3 {
+            color: #2e51a2; /* Main heading color */
+        }
+
+        h1 {
+          font-size: 3em;
+          text-align: center;
+          margin-top: 1em;
+          margin-bottom: 0.5em;
+        }
+
+        h2 {
+            font-size: 2em;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            border-bottom: 3px solid #2e51a2; /* Section underline */
+            padding-bottom: 0.25em;
+        }
+
+       h3 { font-size: 1.5em;
+            margin-top: 1.2em;
+            margin-bottom: 0.4em;
+        }
+
+        p {
+          font-size: 1.1em;
+          margin-bottom: 1em;
+        }
+
+        /* Main container */
+        .container {
+            width: 85%;
+            max-width: 900px;
+            margin: 20px auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Table of Contents */
+        #toc {
+            background-color: #e9eef5;
+            border-left: 4px solid #2e51a2;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 8px;
+        }
+
+        #toc h2 {
+            margin-top: 0;
+            border: none;
+            font-size: 1.8em;
+        }
+
+        #toc ul {
+            list-style: none; /* Remove bullets */
+            padding-left: 0;
+
+        }
+
+        #toc li {
+            margin-bottom: 0.8em;
+
+        }
+
+        #toc a {
+            color: #4a6fb7;
+            text-decoration: none; /* Remove underline */
+            font-size: 1.2em;
+            display: block;      /* Make the link occupy full width */
+            padding-left: 10px;    /* Indent for visual hierarchy */
+            transition: color 0.2s, padding-left 0.3s ease;
+        }
+
+        #toc a:hover {
+            color: #2e51a2;
+            padding-left: 15px; /* Increased indent on hover*/
+            text-decoration: underline; /* Add Underline */
+
+        }
+
+        /* Sections */
+        section {
+            margin-bottom: 40px;
+        }
+
+        /* Code blocks */
+        pre {
+            background-color: #f8f8f8;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto; /* Horizontal scroll for long lines */
+            font-size: 0.9em;
+            line-height: 1.4;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        code{
+             font-family: 'Courier New', Courier, monospace;
+             background-color: #f8f8f8;
+             padding: 3px;
+             border-radius: 4px;
+        }
+
+        /* List */
+        ul {
+          list-style-type: disc; /* Use discs as bullets */
+          margin-left: 20px;   /* Indent the list */
+          margin-bottom: 1em;
+        }
+
+        li {
+            margin-bottom: 0.5em;
+        }
+
+        .highlight {
+            font-weight: bold;
+            color: #2e51a2;
+        }
+        /* Animation */
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 JetBot 원격 제어 및 실시간 상황 인식 프로젝트</h1>
+
+        <nav id="toc">
+            <h2>목차</h2>
+            <ul>
+                <li><a href="#intro">🚀 프로젝트 소개</a></li>
+                <li><a href="#components">⚙️ 구성 요소</a></li>
+                <li><a href="#setup">🛠️ 설치 및 실행 방법</a></li>
+                <li><a href="#features">🌟 주요 기능</a></li>
+                <li><a href="#usage">💻 사용 예시</a></li>
+                <li><a href="#customize">✨ 추가 기능 및 커스터마이징</a></li>
+                <li><a href="#troubleshooting">🔍 문제 해결</a></li>
+                <li><a href="#license">📜 라이선스</a></li>
+            </ul>
+        </nav>
+
+        <section id="intro">
+            <h2>🚀 프로젝트 소개</h2>
+            <p>
+                본 프로젝트는 <span class="highlight">JetBot</span>, <span class="highlight">Ollama</span>,
+                <span class="highlight">FastAPI</span>, <span class="highlight">Edge TTS</span>를 활용하여
+                JetBot을 원격으로 제어하고 실시간으로 주변 상황을 인식하는 시스템을 구축하는 것을 목표로 합니다.
+                JetBot의 카메라 피드를 실시간으로 받아 Ollama를 통해 분석하고, 분석 결과에 따라 JetBot을 제어하거나 사용자에게 음성으로 상황을 설명합니다.
+            </p>
+        </section>
+
+        <section id="components">
+          <h2>⚙️ 구성 요소</h2>
+          <ul>
+            <li>
+              <strong>JetBot:</strong> NVIDIA Jetson Nano 기반의 로봇 플랫폼.
+            </li>
+            <li>
+              <strong>Ollama:</strong> 로컬 환경에서 대규모 언어 모델(LLM)을 실행하기 위한 도구. (<code>gemma3:4b</code> 모델 사용)
+            </li>
+            <li>
+              <strong>FastAPI:</strong> 빠르고 효율적인 Python 웹 API 프레임워크.
+            </li>
+            <li>
+              <strong>Edge TTS:</strong> Microsoft Edge의 텍스트 음성 변환 (TTS) 엔진.  자연스러운 한국어 음성 제공.
+            </li>
+            <li>
+              <strong>HTML/JavaScript/CSS:</strong> 사용자 인터페이스 (UI).
+            </li>
+            <li>
+              <strong>WebSockets:</strong> JetBot과 PC간의 실시간 양방향 통신.
+            </li>
+          </ul>
+        </section>
+
+        <section id="setup">
+            <h2>🛠️ 설치 및 실행 방법</h2>
+            <ol>
+                <li>
+                    <strong>사전 준비</strong>
+                    <ul>
+                        <li>JetBot이 올바르게 설정되어 있고, PC와 동일한 네트워크에 연결되어 있는지 확인합니다. JetBot의 IP 주소를 확인합니다.</li>
+                        <li><a href="https://ollama.com/" target="_blank">Ollama 공식 웹사이트</a>의 지침에 따라 Ollama를 설치합니다.</li>
+                        <li>
+                            터미널에서 다음 명령을 실행하여 <code>gemma3:4b</code> 모델을 다운로드합니다.
+                            <pre><code>ollama run gemma3:4b</code></pre>
+                        </li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>프로젝트 설치</strong>
+                    <ol type="a">
+                        <li>이 저장소(repository)를 클론(clone)하거나 ZIP 파일로 다운로드합니다.
+                        <pre><code>git clone <repository_url>
+cd <repository_directory>
+                        </code></pre>
+                        </li>
+                        <li>(선택 사항) Python 가상 환경을 생성하고 활성화합니다.
+                        <pre><code>python3 -m venv venv
+source venv/bin/activate  # Linux/macOS
+venv\Scripts\activate    # Windows</code></pre>
+                        </li>
+                        <li>필수 Python 패키지를 설치합니다.
+                        <pre><code>pip install -r requirements.txt</code></pre>
+                        </li>
+                    </ol>
+                </li>
+
+                 <li>
+                    <strong>환경 설정</strong>
+                    <ul>
+                        <li>
+                        <code>main.py</code> 파일을 열어 다음 설정 변수들을 확인하고 필요에 따라 수정합니다.
+                            <ul>
+                                <li><code>OLLAMA_HOST</code>: Ollama가 실행 중인 호스트 주소 (기본값: <code>http://localhost:11434</code>).</li>
+                                <li><code>MODEL_NAME</code>: 사용할 Ollama 모델 이름 (기본값: <code>gemma3:4b</code>).</li>
+                                <li><code>JETBOT_WEBSOCKET_URL</code>: JetBot의 웹소켓 주소 (예: <code>ws://<jetbot_ip_address>:8766</code>).  JetBot의 IP 주소와 포트 번호를 확인하여 수정해야 합니다.</li>
+                                <li><code>VOICE</code>:  TTS에 사용할 음성.</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>실행</strong>
+                    <ol type="a">
+                        <li>JetBot에서 <code>jetbot_control.py</code> 스크립트를 실행합니다.
+                          <pre><code>python jetbot_control.py</code></pre>
+                        </li>
+                        <li>PC에서 FastAPI 서버를 실행합니다.
+                            <pre><code>uvicorn main:app --reload --port 8000 --host 0.0.0.0</code></pre>
+                        </li>
+                        <li>웹 브라우저를 열고 <code>http://localhost:8000</code> (로컬) 또는 <code>http://<PC_IP_address>:8000</code> (외부)에 접속합니다.</li>
+                    </ol>
+                </li>
+            </ol>
+        </section>
+
+        <section id="features">
+            <h2>🌟 주요 기능</h2>
+            <ul>
+                <li><strong>실시간 영상 분석:</strong> JetBot의 카메라 영상을 실시간으로 받아 <code>gemma3:4b</code> 모델을 이용해 분석합니다.</li>
+                <li><strong>JetBot 제어:</strong>  분석 결과 및 사용자의 명령에 따라 JetBot에게 전진, 후진, 좌회전, 우회전, 정지 등의 명령을 내립니다.</li>
+                <li><strong>상황 음성 설명:</strong>  Edge TTS를 사용하여  분석 결과, JetBot의 현재 상태 등을 한국어 음성으로 사용자에게 알려줍니다.</li>
+                 <li><strong>장애물 회피:</strong> 장애물을 감지하면 자동으로 회피합니다.</li>
+                <li><strong>웹 인터페이스:</strong>  웹 브라우저를 통해 JetBot을 제어하고, 실시간 영상 및 분석 결과를 확인합니다.</li>
+                <li><strong>사용자 지정 명령:</strong>  웹 인터페이스를 통해 사용자가 직접 텍스트 명령을 입력하여 JetBot에게 전달할 수 있습니다.</li>
+            </ul>
+        </section>
+
+        <section id="usage">
+            <h2>💻 사용 예시</h2>
+            <ul>
+                <li><strong>"주변 설명"</strong> 버튼을 누르면, JetBot은 현재 카메라에 보이는 환경을 설명하는 음성 응답을 제공합니다.</li>
+                <li><strong>"전진", "후진", "좌회전", "우회전", "정지"</strong> 버튼을 누르면 JetBot이 해당 방향으로 움직이거나 정지합니다.</li>
+                 <li><strong>"장애물 회피"</strong> 버튼을 누르면 장애물을 피해 이동합니다.</li>
+                <li><strong>"시계 방향 회전", "반시계 방향 회전"</strong> 버튼을 누르면, Jetbot이 해당 방향으로 회전합니다.
+                <li><strong>"천천히 전진", "천천히 후진"</strong> 버튼을 누르면, Jetbot이 해당 방향으로 천천히 이동합니다.
+                <li><strong>"랜덤 액션"</strong> 버튼을 누르면, Jetbot이 랜덤한 행동을 합니다.
+                </li>
+                <li><strong>"사용자 지정 명령"</strong> 입력 필드에 텍스트 명령(예: "테이블 위에 있는 컵을 찾아줘")을 입력하고 "실행" 버튼을 누르면, JetBot에게 해당 명령을 전달할 수 있습니다.</li>
+            </ul>
+        </section>
+
+        <section id="customize">
+          <h2>✨ 추가 기능 및 커스터마이징</h2>
+          <ul>
+              <li><strong>객체 인식 및 추적:</strong> 특정 객체를 인식하고 추적하는 기능을 추가할 수 있습니다.</li>
+              <li><strong>경로 계획:</strong>  특정 목적지까지의 경로를 계획하고, 그 경로를 따라 이동하는 기능을 추가할 수 있습니다.</li>
+              <li><strong>음성 명령 인식:</strong>  웹 인터페이스의 텍스트 입력 대신, 음성 명령을 인식하여 JetBot을 제어하는 기능을 추가할 수 있습니다.</li>
+              <li><strong>얼굴 인식:</strong>  카메라에 보이는 사람의 얼굴을 인식하고, 등록된 사용자인지 확인하는 기능을 추가할 수 있습니다.</li>
+              <li><strong>지도 작성 (SLAM):</strong>  JetBot이 주변 환경의 지도를 작성하고, 이를 기반으로 자율 주행하는 기능을 추가할 수 있습니다.</li>
+              <li><strong>ROS 2 연동:</strong>  ROS 2 (Robot Operating System)와 연동하여 더 복잡한 로봇 시스템을 구축할 수 있습니다.</li>
+              <li><strong>사용자 인터페이스 개선:</strong>  웹 인터페이스를 더욱 직관적이고 편리하게 개선할 수 있습니다. (예:  지도 표시,  로그 표시,  설정 변경 기능 추가)</li>
+          </ul>
+        </section>
+
+        <section id="troubleshooting">
+          <h2>🔍 문제 해결</h2>
+          <ul>
+              <li><strong>한글 깨짐:</strong>  Ollama 및 FastAPI 코드에서 유니코드 정규화, UTF-8 인코딩/디코딩을 올바르게 처리하는지 확인합니다.</li>
+              <li><strong>TTS 오류:</strong>  `edge-tts` 라이브러리가 올바르게 설치되었는지 확인하고,  다른 TTS 엔진으로 임시 테스트를 진행해봅니다.</li>
+              <li><strong>504 Gateway Timeout:</strong>  JetBot 연결 및 코드, Ollama 모델 및 설정, 네트워크 연결, FastAPI 설정 (타임아웃) 등을 확인합니다.</li>
+              <li><strong>JetBot 연결 오류:</strong> JetBot의 전원, 네트워크 연결, 웹소켓 서버 실행 여부, IP 주소 설정 등을 확인합니다.</li>
+              <li><strong>기타 오류:</strong>  PC 및 JetBot의 로그를 확인하여 오류 메시지를 분석하고,  필요한 경우 코드를 수정합니다.</li>
+          </ul>
+        </section>
+
+        <section id="license">
+            <h2>📜 라이선스</h2>
+            <p>
+                이 프로젝트는 MIT 라이선스 하에 배포됩니다. 자세한 내용은 <code>LICENSE</code> 파일을 참조하십시오.
+            </p>
+        </section>
+    </div>
+</body>
+</html>
