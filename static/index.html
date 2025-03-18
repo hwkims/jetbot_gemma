@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JetBot Control</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        #webcam-feed { width: 640px; height: 480px; border: 1px solid black; }
+        #response-text { margin-top: 10px; }
+        button { margin: 5px; padding: 10px; cursor: pointer; }
+        .button-container { display: flex; flex-wrap: wrap; }
+    </style>
+</head>
+<body>
+    <h1>JetBot Control</h1>
+
+    <!-- JetBot 웹캠 스트림 -->
+    <img id="webcam-feed" src="http://192.168.137.233:8000/webcam">
+
+    <div class="button-container">
+        <!-- <button id="capture-button">Capture Image</button>  웹소켓으로 실시간 전송하므로 제거 -->
+        <button id="describe-button">Describe</button>
+        <button id="navigate-forward-button">Forward</button>
+        <button id="navigate-backward-button">Backward</button>
+        <button id="navigate-left-button">Left</button>
+        <button id="navigate-right-button">Right</button>
+    </div>
+
+    <div id="response-text"></div>
+
+    <script>
+        const webcamFeed = document.getElementById('webcam-feed');
+        // const captureButton = document.getElementById('capture-button');  // 제거
+        const describeButton = document.getElementById('describe-button');
+        const navigateForwardButton = document.getElementById('navigate-forward-button');
+        const navigateBackwardButton = document.getElementById('navigate-backward-button');
+        const navigateLeftButton = document.getElementById('navigate-left-button');
+        const navigateRightButton = document.getElementById('navigate-right-button');
+        const responseText = document.getElementById('response-text');
+
+        let websocket;
+
+        // 웹소켓 연결
+        function connectWebSocket() {
+            websocket = new WebSocket("ws://192.168.137.233:8766"); // JetBot 웹소켓 주소, 포트번호 확인
+
+            websocket.onopen = () => {
+                console.log("WebSocket connected");
+            };
+
+            websocket.onmessage = (event) => {
+                // 이미지 데이터 수신
+                const data = JSON.parse(event.data);
+                if (data.image) {
+                    webcamFeed.src = "data:image/jpeg;base64," + data.image;
+                }
+            };
+
+            websocket.onclose = () => {
+                console.log("WebSocket closed");
+            };
+
+            websocket.onerror = (error) => {
+                console.error("WebSocket error:", error);
+            };
+        }
+
+        // 이미지 캡처 (더 이상 사용 안 함)
+        // function captureImage() { ... }
+
+        // FastAPI 호출 (이미지 + JSON 프롬프트)
+        async function sendData(prompt, action = "navigate", direction_hint = null) {
+            // 현재 이미지를 Base64로 가져옴
+            const imageData = webcamFeed.src;
+
+            try {
+                const response = await fetch("http://localhost:8000/api/generate", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        image: imageData,  // Base64 이미지 데이터
+                        action: action,
+                        direction_hint: direction_hint
+                    })
+                });
+
+                const data = await response.json();
+                responseText.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+
+            } catch (error) {
+                console.error("Error:", error);
+                responseText.textContent = "Error: " + error;
+            }
+        }
+
+        // 이벤트 리스너
+        describeButton.addEventListener('click', () => {
+            sendData("Describe the objects in this image.", "describe");
+        });
+
+        navigateForwardButton.addEventListener('click', () => {
+            sendData("Navigate the robot", "navigate", "forward");
+        });
+
+        navigateBackwardButton.addEventListener('click', () => {
+            sendData("Navigate the robot", "navigate", "backward");
+        });
+
+        navigateLeftButton.addEventListener('click', () => {
+            sendData("Navigate the robot", "navigate", "left");
+        });
+
+        navigateRightButton.addEventListener('click', () => {
+            sendData("Navigate the robot", "navigate", "right");
+        });
+
+        // 페이지 로드 시 웹소켓 연결
+        document.addEventListener('DOMContentLoaded', () => {
+            connectWebSocket();
+        });
+    </script>
+</body>
+</html>
