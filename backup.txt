@@ -1,0 +1,409 @@
+# main.py (PC - FastAPI + Ollama + JetBot Command + Static Files + TTS)
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import asyncio
+import json
+import logging
+from typing import Optional, AsyncGenerator, Dict, Any
+from pydantic import BaseModel
+import httpx  # Ollama API
+import websockets  # JetBot 명령
+import edge_tts
+import subprocess
+import base64
+import io
+from pathlib import Path
+import os # os 모듈 import
+
+
+# --- 로깅 ---
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# --- 설정 ---
+OLLAMA_HOST = "http://localhost:11434"  # Ollama (PC에서 실행)
+MODEL_NAME = "gemma3:4b"
+JETBOT_WEBSOCKET_URL = "ws://192.168.137.233:8766"  # JetBot 웹소켓 변경!
+VOICE = "ko-KR-HyunsuNeural"
+TTS_RATE = "+30%"
+
+app = FastAPI()
+
+# --- CORS ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Pydantic 모델 ---
+class OllamaRequest(BaseModel):
+    prompt: str
+    image: Optional[str] = None
+    action: str = "navigate"
+    direction_hint: Optional[str] = None
+
+# --- Ollama API ---
+async def query_ollama_stream(prompt: str, image_data: Optional[str] = None) -> AsyncGenerator[Dict[str, Any], None]:
+    data = {
+        "model": MODEL_NAME,
+        "prompt": prompt,
+        "images": [image_data] if image_data else [],
+        "stream": True,
+        "format": "json",
+        "options": {"temperature": 0.1, "top_p": 0.7},
+    }
+    logger.debug(f"Ollama 요청: {prompt[:50]}..., 이미지: {'있음' if image_data else '없음'}")
+    try:
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                "POST",
+                f"{OLLAMA_HOST}/api/generate",
+                headers={"Content-Type": "application/json"},
+                json=data,
+                timeout=httpx.Timeout(60.0, connect=5.0, read=120.0, write=5.0),
+            ) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_text():
+                    try:
+                        for line in chunk.splitlines():
+                            if line.strip():
+                                yield json.loads(line)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"JSON Decode Error: {e}, chunk: {chunk}")
+
+    except httpx.RequestError as e:
+        logger.error(f"httpx RequestError: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except httpx.HTTPStatusError as e:
+        logger.error(f"httpx HTTP Status Error: {e}, Response: {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except Exception as e:
+        logger.exception("Unexpected error during Ollama streaming")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- TTS (async def speak 함수) ---
+async def speak(text: str, output_filename:str = "output.wav"):
+    """
+    Edge TTS를 사용하여 주어진 텍스트를 음성으로 변환하고 파일로 저장합니다.
+    """
+    try:
+        communicate = edge_tts.Communicate(text, VOICE, rate=TTS_RATE)
+        await communicate.save(output_filename)
+        return output_filename
+
+    except Exception as e:
+        logger.error(f"TTS Error: {e}")
+        raise HTTPException(status_code=500, detail=f"TTS Error: {e}")
+
+# --- JetBot 명령 전송 ---
+async def send_command_to_jetbot(command: str, parameters: Optional[Dict[str, Any]] = None):
+    try:
+        async with websockets.connect(JETBOT_WEBSOCKET_URL) as websocket:
+            await websocket.send(json.dumps({"command": command, "parameters": parameters}))
+            logger.info(f"Sent command to JetBot: {command}, {parameters}")
+    except Exception as e:
+        logger.error(f"Failed to send command to JetBot: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- FastAPI 엔드포인트 ---
+@app.post("/api/generate")
+async def generate(request_data: OllamaRequest):
+    image_data = request_data.image.split(",")[1] if request_data.image and request_data.image.startswith("data:image") else None
+    full_response_text = ""
+
+    try:
+        async for response_part in query_ollama_stream(request_data.prompt, image_data):
+            if "response" in response_part:
+                full_response_text += response_part["response"]
+
+        if not full_response_text.strip():
+            return JSONResponse({"response": "Ollama로부터 받은 정보가 없습니다.", "jetbot_command": "none"})
+
+        # 한글로 응답하도록 프롬프트 조정 (모델에 따라 효과가 없을 수 있음)
+        full_response_text_korean = full_response_text # + " (한국어로 응답해주세요.)"  <-  모델에 따라 주석 해제.
+
+
+        # JetBot 명령 결정
+        jetbot_command = "none"
+        parameters = {}
+        response_lower = full_response_text_korean.lower()
+
+        if request_data.action == "navigate":
+            if "obstacle" in response_lower or "object" in response_lower:
+                jetbot_command = "avoid_obstacle"
+                parameters = {"direction": "left"}  #  장애물 회피 방향.  left, right, auto 등.  LLM과 연동 필요
+            elif request_data.direction_hint:
+                if request_data.direction_hint == "left":
+                    jetbot_command = "turn_left"
+                elif request_data.direction_hint == "right":
+                    jetbot_command = "turn_right"
+                elif request_data.direction_hint == "forward":
+                    jetbot_command = "move_forward"
+                elif request_data.direction_hint == "backward":
+                    jetbot_command = "move_backward"
+        elif request_data.action == "describe":
+            jetbot_command = "none"
+
+        # JetBot에 명령 전송
+        await send_command_to_jetbot(jetbot_command, parameters)
+
+        # TTS 실행 및 음성 파일 반환
+        audio_file = await speak(full_response_text_korean)
+
+
+        return JSONResponse({
+            "response": full_response_text_korean,
+            "jetbot_command": jetbot_command,
+            "audio": audio_file # 음성 파일 경로
+        })
+
+    except HTTPException as e:
+        logger.error(f"HTTPException: {e.detail}")
+        raise
+    except Exception as e:
+        logger.exception(f"Error during API request: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+# --- 정적 파일 제공 (index.html) ---
+static_dir = Path(__file__).parent / "static"
+
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    try:
+        with open(static_dir / "index.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="index.html not found")
+
+app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JetBot 제어 센터</title>
+    <style>
+        /* Reset and Basic Styling */
+        body {
+            font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; /* Apple-like font */
+            margin: 0;
+            padding: 0;
+            background-color: #f7f7f7;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            color: #2e2e2e;
+            margin-top: 30px;
+            margin-bottom: 20px;
+        }
+
+        /* Webcam Feed Container */
+        #webcam-container {
+            position: relative;
+            width: 640px; /* Or your preferred size */
+            height: 480px; /* Or your preferred size */
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        #webcam-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Maintain aspect ratio */
+        }
+
+        /* Button Container */
+        .button-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 20px;
+            gap: 10px; /* Spacing between buttons */
+        }
+
+        button {
+            background-color: #007bff; /* Apple blue */
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px; /* Rounded corners */
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        button:hover {
+            background-color: #0056b3; /* Darker blue on hover */
+        }
+
+        /* Response Area */
+        #response-container {
+            margin-top: 30px;
+            width: 640px;
+            text-align: center;
+        }
+
+        #response-text {
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            min-height: 100px;
+            display: flex; /* Use flexbox for centering */
+            align-items: center; /* Vertical centering */
+            justify-content: center; /* Horizontal centering */
+        }
+       /* Audio Player */
+        #audio-player {
+            margin-top: 10px;
+            width: 100%;  /* Full width */
+
+        }
+
+
+    </style>
+</head>
+<body>
+    <h1>JetBot 제어 센터</h1>
+
+    <div id="webcam-container">
+        <img id="webcam-feed" src="http://192.168.137.233:8000/webcam" alt="JetBot Webcam Feed">
+    </div>
+
+    <div class="button-container">
+        <button id="describe-button">주변 설명</button>
+        <button id="navigate-forward-button">전진</button>
+        <button id="navigate-backward-button">후진</button>
+        <button id="navigate-left-button">좌회전</button>
+        <button id="navigate-right-button">우회전</button>
+    </div>
+
+    <div id="response-container">
+        <div id="response-text">응답이 여기에 표시됩니다.</div>
+         <audio id="audio-player" controls style="display: none;"></audio>
+    </div>
+
+
+    <script>
+        const webcamFeed = document.getElementById('webcam-feed');
+        const describeButton = document.getElementById('describe-button');
+        const navigateForwardButton = document.getElementById('navigate-forward-button');
+        const navigateBackwardButton = document.getElementById('navigate-backward-button');
+        const navigateLeftButton = document.getElementById('navigate-left-button');
+        const navigateRightButton = document.getElementById('navigate-right-button');
+        const responseText = document.getElementById('response-text');
+        const audioPlayer = document.getElementById('audio-player');
+
+
+        let websocket;
+
+        // 웹소켓 연결
+        function connectWebSocket() {
+            websocket = new WebSocket("ws://192.168.137.233:8766"); // JetBot 웹소켓 주소, 포트번호 확인
+
+            websocket.onopen = () => {
+                console.log("WebSocket connected");
+            };
+
+            websocket.onmessage = (event) => {
+                // 이미지 데이터 수신
+                const data = JSON.parse(event.data);
+                if (data.image) {
+                    webcamFeed.src = "data:image/jpeg;base64," + data.image;
+                }
+            };
+
+            websocket.onclose = () => {
+                console.log("WebSocket closed");
+            };
+
+            websocket.onerror = (error) => {
+                console.error("WebSocket error:", error);
+            };
+        }
+
+
+        // FastAPI 호출 (이미지 + JSON 프롬프트)
+       async function sendData(prompt, action = "navigate", direction_hint = null) {
+            const imageData = webcamFeed.src;
+
+            try {
+                const response = await fetch("http://localhost:8000/api/generate", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        image: imageData,
+                        action: action,
+                        direction_hint: direction_hint
+                    })
+                });
+
+                const data = await response.json();
+
+                // 응답 텍스트 표시
+                responseText.textContent = data.response;
+
+               // 오디오 재생
+                if (data.audio) {
+                    audioPlayer.src = data.audio;
+                    audioPlayer.style.display = 'block'; // Show the player
+                    audioPlayer.play().catch(e => console.error("Playback failed:", e));
+                }
+
+
+            } catch (error) {
+                console.error("Error:", error);
+                responseText.textContent = "오류 발생: " + error;
+            }
+        }
+
+
+        // 이벤트 리스너
+        describeButton.addEventListener('click', () => {
+            sendData("이 이미지에 있는 물체들을 설명해줘.", "describe");
+        });
+
+        navigateForwardButton.addEventListener('click', () => {
+            sendData("로봇을 조종해줘.", "navigate", "forward");
+        });
+
+        navigateBackwardButton.addEventListener('click', () => {
+            sendData("로봇을 조종해줘.", "navigate", "backward");
+        });
+
+        navigateLeftButton.addEventListener('click', () => {
+            sendData("로봇을 조종해줘.", "navigate", "left");
+        });
+
+        navigateRightButton.addEventListener('click', () => {
+            sendData("로봇을 조종해줘.", "navigate", "right");
+        });
+
+        // 페이지 로드 시 웹소켓 연결
+        document.addEventListener('DOMContentLoaded', () => {
+            connectWebSocket();
+        });
+    </script>
+</body>
+</html>
