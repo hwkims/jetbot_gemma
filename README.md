@@ -1,5 +1,7 @@
 # JetBot-Ollama-Control
 ![image](https://github.com/user-attachments/assets/3579a3d2-2adf-4136-ae7b-ac8d0fabf516)
+![image](https://github.com/user-attachments/assets/cafdb8ff-a6a8-4e68-9124-6995bb1d16d9)
+![image](https://github.com/user-attachments/assets/de3a54f3-88c1-4408-8a02-14d1a4059393)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
