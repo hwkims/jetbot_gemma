@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JetBot 제어 센터</title>
+    <style>
+        /* Reset and Basic Styling */
+        body {
+            font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f7f7f7;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            color: #2e2e2e;
+            margin-top: 30px;
+            margin-bottom: 20px;
+        }
+
+        /* Webcam Feed Container */
+        #webcam-container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        #webcam-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* Button Container */
+        .button-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 20px;
+            gap: 10px;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px; /* Padding adjusted */
+            border-radius: 25px;
+            font-size: 14px; /* Font size adjusted */
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            margin: 5px; /* Added margin */
+        }
+          button:hover {
+            background-color: #0056b3;
+        }
+
+        /* Response Area */
+        #response-container {
+            margin-top: 30px;
+            width: 640px;
+            text-align: center;
+        }
+
+      #response-text {
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            min-height: 100px;
+            overflow-x: auto; /*가로 스크롤*/
+
+        }
+        /* Audio Player */
+        #audio-player {
+            margin-top: 10px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h1>JetBot 제어 센터</h1>
+
+    <div id="webcam-container">
+        <img id="webcam-feed" src="http://192.168.137.233:8000/webcam" alt="JetBot Webcam Feed">
+    </div>
+
+    <div class="button-container">
+        <button id="describe-button">주변 설명</button>
+        <button id="navigate-forward-button">전진</button>
+        <button id="navigate-backward-button">후진</button>
+        <button id="navigate-left-button">좌회전</button>
+        <button id="navigate-right-button">우회전</button>
+        <button id="stop-button">정지</button>
+        <button id="avoid-obstacle-button">장애물 회피</button><br>
+        <input type="text" id="custom-command-input" placeholder="사용자 지정 명령 입력">
+        <button id="custom-command-button">사용자 지정 명령</button>
+
+        <!-- 추가 버튼 -->
+        <button id="rotate-clockwise-button">시계 방향 회전</button>
+        <button id="rotate-counterclockwise-button">반시계 방향 회전</button>
+        <button id="move-forward-slow-button">천천히 전진</button>
+        <button id="move-backward-slow-button">천천히 후진</button>
+
+    </div>
+
+    <div id="response-container">
+        <div id="response-text"></div>
+        <audio id="audio-player" controls style="display: none;"></audio>
+    </div>
+
+    <script>
+        const webcamFeed = document.getElementById('webcam-feed');
+        const describeButton = document.getElementById('describe-button');
+        const navigateForwardButton = document.getElementById('navigate-forward-button');
+        const navigateBackwardButton = document.getElementById('navigate-backward-button');
+        const navigateLeftButton = document.getElementById('navigate-left-button');
+        const navigateRightButton = document.getElementById('navigate-right-button');
+        const stopButton = document.getElementById('stop-button'); // 정지 버튼
+        const avoidObstacleButton = document.getElementById('avoid-obstacle-button'); // 장애물 회피 버튼
+        const customCommandButton = document.getElementById('custom-command-button')
+        const customCommandInput = document.getElementById('custom-command-input');
+
+        const rotateClockwiseButton = document.getElementById('rotate-clockwise-button');
+        const rotateCounterclockwiseButton = document.getElementById('rotate-counterclockwise-button');
+        const moveForwardSlowButton = document.getElementById('move-forward-slow-button');
+        const moveBackwardSlowButton = document.getElementById('move-backward-slow-button');
+
+        const responseText = document.getElementById('response-text');
+        const audioPlayer = document.getElementById('audio-player');
+
+
+        let websocket;
+
+        // 웹소켓 연결
+        function connectWebSocket() {
+            websocket = new WebSocket("ws://192.168.137.233:8766");
+
+            websocket.onopen = () => {
+                console.log("WebSocket connected");
+            };
+
+            websocket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.image) {
+                    webcamFeed.src = "data:image/jpeg;base64," + data.image;
+                }
+            };
+
+            websocket.onclose = () => {
+                console.log("WebSocket closed");
+            };
+
+            websocket.onerror = (error) => {
+                console.error("WebSocket error:", error);
+            };
+        }
+
+        // FastAPI 호출
+        async function sendData(prompt, action = "navigate", direction_hint = null) {
+            const imageData = webcamFeed.src;
+
+            try {
+                const response = await fetch("http://localhost:8000/api/generate", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        image: imageData,
+                        action: action,
+                        direction_hint: direction_hint
+                    })
+                });
+
+                const data = await response.json();
+
+                // 응답 텍스트 표시
+                responseText.textContent = data.response;
+
+                // 오디오 재생
+                if (data.audio) {
+                    const audioData = `data:audio/wav;base64,${data.audio}`;
+                    audioPlayer.src = audioData;
+                    audioPlayer.style.display = 'block';
+                    audioPlayer.play().catch(e => console.error("Playback failed:", e));
+                }
+
+            } catch (error) {
+                console.error("Error:", error);
+                responseText.textContent = "오류 발생: " + error;
+            }
+        }
+
+
+        // 이벤트 리스너
+        describeButton.addEventListener('click', () => {
+            sendData("이 이미지에 있는 물체들을 자세히 설명해줘.", "describe");
+        });
+
+        navigateForwardButton.addEventListener('click', () => {
+            sendData("로봇을 앞으로 이동시켜줘.", "navigate", "forward");
+        });
+
+        navigateBackwardButton.addEventListener('click', () => {
+            sendData("로봇을 뒤로 이동시켜줘.", "navigate", "backward");
+        });
+
+        navigateLeftButton.addEventListener('click', () => {
+            sendData("로봇을 왼쪽으로 회전시켜줘.", "navigate", "left");
+        });
+
+        navigateRightButton.addEventListener('click', () => {
+            sendData("로봇을 오른쪽으로 회전시켜줘.", "navigate", "right");
+        });
+
+        stopButton.addEventListener('click', () => {
+            sendData("로봇을 정지시켜줘.", "navigate", "stop"); // 'stop' 힌트 추가
+        });
+
+        avoidObstacleButton.addEventListener('click', () => {
+            sendData("장애물을 피해서 이동해줘.", "navigate", "avoid"); // 'avoid' 힌트 추가
+        });
+        // 사용자 지정 명령어
+        customCommandButton.addEventListener('click', () => {
+            const command = customCommandInput.value;
+            if(command.trim() !== "") {
+                sendData(command, "custom"); // action을 "custom"으로
+            } else {
+              alert("명령을 입력해주세요.")
+            }
+        });
+
+        // 추가 버튼 이벤트 리스너
+        rotateClockwiseButton.addEventListener('click', () => {
+            sendData("로봇을 시계 방향으로 회전시켜줘.", "navigate", "rotate_clockwise");
+        });
+
+        rotateCounterclockwiseButton.addEventListener('click', () => {
+            sendData("로봇을 반시계 방향으로 회전시켜줘.", "navigate", "rotate_counterclockwise");
+        });
+
+        moveForwardSlowButton.addEventListener('click', () => {
+            sendData("로봇을 천천히 앞으로 이동시켜줘.", "navigate", "forward_slow");
+        });
+
+        moveBackwardSlowButton.addEventListener('click', () => {
+            sendData("로봇을 천천히 뒤로 이동시켜줘.", "navigate", "backward_slow");
+        });
+
+
+
+        // 페이지 로드 시 웹소켓 연결
+        document.addEventListener('DOMContentLoaded', () => {
+            connectWebSocket();
+        });
+    </script>
+</body>
+</html>
