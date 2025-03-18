@@ -1,4 +1,3 @@
-
 # jetbot_control.py (JetBot - WebSocket Server + JetBot Control + Image Send)
 
 import asyncio
