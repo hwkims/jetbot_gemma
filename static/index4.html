@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 JetBot 제어</title>
+    <style>
+        /* 기존 스타일 유지, 간소화된 스타일만 적용 */
+        body { font-family: Arial, sans-serif; background-color: #f5f5f7; padding: 20px; text-align: center; }
+        #webcam-feed { max-width: 100%; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        button { padding: 10px 20px; margin: 5px; background: #007aff; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        button:disabled { background: #d1d1d6; }
+        .custom-command-group { display: flex; gap: 10px; margin-top: 10px; }
+        input[type="text"] { padding: 10px; flex: 1; border-radius: 8px; border: 1px solid #d1d1d6; }
+        #response-text { margin-top: 20px; background: white; padding: 15px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h1>🤖 JetBot 제어</h1>
+    <img id="webcam-feed" alt="JetBot Webcam Feed">
+    <div>
+        <button id="describe-button">👀 설명</button>
+        <button id="navigate-forward-button">🚀 전진</button>
+        <button id="navigate-backward-button">⏪ 후진</button>
+        <button id="navigate-left-button">⬅️ 좌회전</button>
+        <button id="navigate-right-button">➡️ 우회전</button>
+        <button id="stop-button">🛑 정지</button>
+        <button id="dance-button">💃 춤추기</button>
+    </div>
+    <div class="custom-command-group">
+        <input type="text" id="custom-command-input" placeholder="명령 입력">
+        <button id="custom-command-button">🚀 실행</button>
+    </div>
+    <div id="response-text"></div>
+    <audio id="audio-player" controls style="display: none;"></audio>
+
+    <script>
+        const webcamFeed = document.getElementById('webcam-feed');
+        const responseText = document.getElementById('response-text');
+        const audioPlayer = document.getElementById('audio-player');
+        const buttons = document.querySelectorAll('button');
+        let isProcessing = false;
+
+        function setButtonsDisabled(disabled) {
+            buttons.forEach(btn => btn.disabled = disabled);
+            isProcessing = disabled;
+        }
+
+        async function sendData(prompt, action = "navigate", direction_hint = null, speed = null, duration = null, angle = null) {
+            if (isProcessing) return;
+            setButtonsDisabled(true);
+            responseText.textContent = "처리중...";
+
+            const bodyData = {
+                prompt,
+                image: webcamFeed.src || "",
+                action,
+                direction_hint,
+                speed,
+                duration,
+                angle
+            };
+
+            try {
+                const response = await fetch("http://localhost:8000/api/generate", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyData)
+                });
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                responseText.textContent = data.response || "응답 없음";
+                if (data.image) webcamFeed.src = data.image;
+                if (data.audio) {
+                    audioPlayer.src = `data:audio/wav;base64,${data.audio}`;
+                    audioPlayer.style.display = 'block';
+                    audioPlayer.play();
+                }
+            } catch (error) {
+                responseText.textContent = `오류: ${error.message}`;
+            } finally {
+                setButtonsDisabled(false);
+            }
+        }
+
+        document.getElementById('describe-button').addEventListener('click', () => sendData("이미지 설명", "describe"));
+        document.getElementById('navigate-forward-button').addEventListener('click', () => sendData("앞으로", "navigate", "forward_medium"));
+        document.getElementById('navigate-backward-button').addEventListener('click', () => sendData("뒤로", "navigate", "backward_medium"));
+        document.getElementById('navigate-left-button').addEventListener('click', () => sendData("왼쪽", "navigate", "left_medium"));
+        document.getElementById('navigate-right-button').addEventListener('click', () => sendData("오른쪽", "navigate", "right_medium"));
+        document.getElementById('stop-button').addEventListener('click', () => sendData("정지", "navigate", "stop"));
+        document.getElementById('dance-button').addEventListener('click', () => sendData("춤", "navigate", "dance"));
+        document.getElementById('custom-command-button').addEventListener('click', () => {
+            const command = document.getElementById('custom-command-input').value;
+            if (command) sendData(command, "custom");
+        });
+    </script>
+</body>
+</html>
