@@ -14,17 +14,20 @@ from pathlib import Path
 import edge_tts
 import io
 
+# --- Logging Setup ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# --- Configuration ---
 OLLAMA_HOST = "http://localhost:11434"
 MODEL_NAME = "llava:7b"
-JETBOT_WEBSOCKET_URL = "ws://192.168.137.233:8766"
+JETBOT_WEBSOCKET_URL = "ws://192.168.137.233:8766"  # Replace with your Jetbot's IP
 STATIC_DIR = Path(__file__).parent / "static"
 TTS_VOICE = "ko-KR-HyunsuNeural"  # Or "en-US-JennyNeural"
 ITERATIONS = 10
 DELAY_SECONDS = 0.1
 
+# --- FastAPI Setup ---
 app = FastAPI()
 
 app.add_middleware(
@@ -37,11 +40,13 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+# --- Pydantic Models ---
 class OllamaRequest(BaseModel):
     prompt: str = Field(..., description="The user's text prompt.")
     iterations: int = Field(ITERATIONS, description="Number of iterations for autonomous control.")
     delay: float = Field(DELAY_SECONDS, description="Delay between actions in seconds.")
 
+# --- HTML Endpoint ---
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     index_path = STATIC_DIR / "index.html"
@@ -50,6 +55,7 @@ async def read_root():
     with open(index_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
+# --- TTS Function ---
 async def generate_tts(text: str) -> str:
     try:
         if not text or text.isspace():
@@ -66,6 +72,7 @@ async def generate_tts(text: str) -> str:
         logger.error(f"TTS generation failed: {e}")
         return await generate_tts("TTS failed.")
 
+# --- Ollama Interaction ---
 async def query_ollama(prompt: str, image_data: Optional[str] = None) -> Dict[str, Any]:
     data = {
         "model": MODEL_NAME,
@@ -94,7 +101,7 @@ async def query_ollama(prompt: str, image_data: Optional[str] = None) -> Dict[st
                 return {"commands": parsed_response}
 
             except (json.JSONDecodeError, KeyError, TypeError):
-                logger.warning(f"Initial JSON parsing failed. Trying alternative. Response: {result.get('response')}")
+                logger.warning(f"Initial JSON parsing failed.  Trying alternative. Response: {result.get('response')}")
                 try:
                     parsed_response = json.loads(result.get("response","{}"))
                     if isinstance(parsed_response, dict) and "commands" in parsed_response:
@@ -103,6 +110,7 @@ async def query_ollama(prompt: str, image_data: Optional[str] = None) -> Dict[st
                         return {"commands": parsed_response}
                     else:
                         raise json.JSONDecodeError("Could not parse as dict or list", result.get("response",""), 0)
+
                 except (json.JSONDecodeError, KeyError, TypeError):
                     logger.error(f"Alternative JSON parsing failed. Response: {result.get('response')}")
                     return {
@@ -114,6 +122,7 @@ async def query_ollama(prompt: str, image_data: Optional[str] = None) -> Dict[st
                             }
                         ]
                     }
+
     except httpx.HTTPStatusError as e:
         logger.error(f"Ollama HTTP error ({e.response.status_code}): {e}")
         return {
@@ -130,6 +139,7 @@ async def query_ollama(prompt: str, image_data: Optional[str] = None) -> Dict[st
             "commands": [{"command": "stop", "parameters": {}, "tts": "An unexpected error occurred."}]
         }
 
+# --- WebSocket Connections ---
 client_websocket: Optional[WebSocket] = None
 jetbot_websocket: Optional[WebSocket] = None
 
@@ -142,7 +152,7 @@ async def jetbot_websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            logger.debug(f"Received from Jetbot: {data}")
+            logger.debug(f"Received from Jetbot: {data}")  # Log *all* messages
     except WebSocketDisconnect:
         logger.info("Jetbot WebSocket disconnected")
         jetbot_websocket = None
@@ -164,7 +174,7 @@ async def client_websocket_endpoint(websocket: WebSocket):
                 message = json.loads(data)
                 if "command" in message:
                     if jetbot_websocket:
-                        await jetbot_websocket.send_text(data)
+                        await jetbot_websocket.send_text(data)  # Forward directly
                     else:
                         logger.warning("Jetbot not connected.")
                         await websocket.send_text(json.dumps({"error": "Jetbot not connected"}))
@@ -180,6 +190,7 @@ async def client_websocket_endpoint(websocket: WebSocket):
         logger.error(f"Client WebSocket error: {e}")
         client_websocket = None
 
+# --- Image Stream Receiver ---
 async def receive_image_stream():
     global current_image_base64
     if not jetbot_websocket:
@@ -198,13 +209,14 @@ async def receive_image_stream():
                     except Exception as e:
                         logger.error(f"Failed to send image to client: {e}")
             else:
-                logger.debug(f"Received from Jetbot: {message}")
+                logger.debug(f"Received from Jetbot: {message}") # Log other
 
     except WebSocketDisconnect:
         logger.info("Jetbot WebSocket disconnected in receive_image_stream")
     except Exception as e:
         logger.error(f"Image stream receive error: {e}")
 
+# --- Autonomous Control Loop ---
 @app.post("/api/autonomous")
 async def autonomous_control(request_data: OllamaRequest):
     global current_image_base64
@@ -264,8 +276,8 @@ async def autonomous_control(request_data: OllamaRequest):
                 jetbot_command = cmd.get("command", "none")
                 parameters = cmd.get("parameters", {})
                 tts_text = cmd.get("tts", "No description.")
-                objects = cmd.get("objects", [])
-                path = cmd.get("path", {"visible": False, "direction": "unknown"})
+                objects = cmd.get("objects", [])  # Not used in decision-making
+                path = cmd.get("path", {"visible": False, "direction": "unknown"}) # Not used
 
                 if jetbot_command not in ["forward", "backward", "left", "right", "stop", "greet"]:
                     jetbot_command = "stop"
@@ -279,12 +291,11 @@ async def autonomous_control(request_data: OllamaRequest):
                             "parameters": parameters
                         })
                         await jetbot_websocket.send_text(command_message)
-                        await asyncio.sleep(parameters.get("duration", 1.0) + 0.1)
+                        await asyncio.sleep(parameters.get("duration", 1.0) + 0.1) # Wait
                     else:
                         logger.warning("Jetbot WebSocket not connected.")
                         tts_text = "Jetbot not connected."
                         jetbot_command = "stop"
-
         else:
             jetbot_command = "stop"
             tts_text = "No valid command. Stopping."
@@ -319,6 +330,25 @@ async def speech_to_text(request: Request):
     except Exception as e:
         logger.error(f"STT endpoint error: {e}")
         return JSONResponse(content={"error": "STT processing failed"}, status_code=500)
+
+async def transcribe_audio(audio_data: io.BytesIO) -> str:
+    import speech_recognition as sr
+    r = sr.Recognizer()
+    try:
+        with sr.AudioFile(audio_data) as source:
+            audio = r.record(source)
+        text = r.recognize_google(audio, language="ko-KR")
+        logger.info(f"Transcribed text: {text}")
+        return text
+    except sr.UnknownValueError:
+        logger.error("Could not understand audio")
+        return "Could not understand audio"
+    except sr.RequestError as e:
+        logger.error(f"Could not request results from Google Speech Recognition; {e}")
+        return "Could not request results from Google Speech Recognition"
+    except Exception as e:
+        logger.error(f"STT transcription error: {e}")
+        return "Transcription error"
 
 @app.on_event("startup")
 async def startup_event():
