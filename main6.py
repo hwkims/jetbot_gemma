@@ -20,7 +20,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-# !! IMPORTANT !!  Update these with your actual values:
 OLLAMA_HOST = "http://localhost:11434"  #  Ollama server address
 MODEL_NAME = "gemma3:4b"  #  Ollama model name.  Make sure this is correct!
 JETBOT_WEBSOCKET_URL = "ws://192.168.137.233:8766"   #  JetBot's IP address and port
@@ -31,26 +30,21 @@ TTS_VOICE = "ko-KR-HyunsuNeural" # TTS voice
 # --- FastAPI Setup ---
 app = FastAPI()
 
-# --- CORS (Cross-Origin Resource Sharing) ---
-# Allows requests from your browser (running on a different origin)
+# --- CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins (for development)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
 # --- Static Files ---
-# Serves static files (HTML, CSS, JavaScript, images) from the 'static' directory
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # --- Root Endpoint (HTML Page) ---
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    """
-    Serves the main HTML page (index.html).
-    """
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
         raise HTTPException(status_code=404, detail="index.html not found")
@@ -59,20 +53,16 @@ async def read_root():
 
 # --- Data Models (Pydantic) ---
 class OllamaRequest(BaseModel):
-    """
-    Defines the structure of the incoming request body for the /api/generate endpoint.
-    """
-    prompt: str  # User's text input
-    image: Optional[str] = None  # Base64 encoded image (optional)
-    action: str = "navigate"  # Action to perform (e.g., "navigate", "describe")
-    direction_hint: Optional[str] = None  #  (e.g., "left_medium", "forward_medium")
-    speed: Optional[float] = None  # Movement speed
-    duration: Optional[float] = None  # Movement duration
-    angle: Optional[float] = None  # Rotation angle
+    prompt: str
+    image: Optional[str] = None
+    action: str = "navigate"
+    direction_hint: Optional[str] = None
+    speed: Optional[float] = None
+    duration: Optional[float] = None
+    angle: Optional[float] = None
 
 # --- JetBot Command Definitions ---
 JETBOT_COMMANDS = {
-    # Maps command names to JetBot actions, parameters, and TTS responses.
     "left_medium": {"command": "left", "parameters": {"speed": 0.3, "duration": 0.7}, "tts": "왼쪽으로 살짝 이동!"},
     "right_medium": {"command": "right", "parameters": {"speed": 0.3, "duration": 0.7}, "tts": "오른쪽으로 살짝 이동!"},
     "forward_medium": {"command": "forward", "parameters": {"speed": 0.4, "duration": 1.0}, "tts": "앞으로 이동!"},
@@ -84,30 +74,24 @@ JETBOT_COMMANDS = {
 
 # --- Text-to-Speech (TTS) Function ---
 async def generate_tts(text: str) -> str:
-    """
-    Generates speech from text using edge-tts and returns the audio as a base64 string.
-    """
     try:
         if not text or text.isspace():
-            text = "처리할 내용이 없습니다."  # Default text if input is empty
+            text = "처리할 내용이 없습니다."
         communicate = edge_tts.Communicate(text, TTS_VOICE)
-        temp_file = "temp_tts_" + str(int(time.time())) + ".mp3"  # Unique filename
+        temp_file = "temp_tts_" + str(int(time.time())) + ".mp3"
         temp_filepath = STATIC_DIR / temp_file
         await communicate.save(temp_filepath)
         with open(temp_filepath, "rb") as f:
             audio_data = base64.b64encode(f.read()).decode("utf-8")
-        os.remove(temp_filepath)  # Delete the temporary file
+        os.remove(temp_filepath)
         logger.info(f"TTS generated successfully: {text}")
         return audio_data
     except Exception as e:
         logger.error(f"TTS generation failed: {e}")
-        return await generate_tts("음성 생성 중 오류가 발생했습니다.")  # Fallback TTS
+        return await generate_tts("음성 생성 중 오류가 발생했습니다.")
 
 # --- Gemma 3 Interaction Function ---
 async def query_gemma3(prompt: str, image_data: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Sends a prompt and (optionally) an image to the Ollama model and returns the response.
-    """
     if image_data:
         # Image description prompt (Object-focused, no quality comments, examples)
         base_prompt = (
@@ -145,14 +129,14 @@ async def query_gemma3(prompt: str, image_data: Optional[str] = None) -> Dict[st
     data = {
         "model": MODEL_NAME,
         "prompt": base_prompt + instruction,
-        "images": [],  # Image is always in the prompt
+        "images": [],
         "stream": False,
         "format": "json",
     }
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(OLLAMA_HOST + "/api/generate", json=data)
-            response.raise_for_status()  # Raise an exception for bad status codes
+            response.raise_for_status()
             result = response.json()
             parsed_response = json.loads(result.get("response", "{}")).get("commands", [])
             logger.info(f"Gemma3 response: {parsed_response}")
@@ -165,12 +149,8 @@ async def query_gemma3(prompt: str, image_data: Optional[str] = None) -> Dict[st
         logger.error(f"Gemma3 error: {e}")
         return {"commands": [{"command": "stop", "parameters": {}, "tts": "오류 발생! 잠시 멈춤."}]}
 
-
 # --- JetBot Communication Function ---
 async def send_command_to_jetbot(command: str, parameters: Optional[Dict[str, Any]] = None) -> Optional[str]:
-    """
-    Sends a command to the JetBot over a WebSocket connection and returns the captured image.
-    """
     try:
         async with websockets.connect(JETBOT_WEBSOCKET_URL) as websocket:
             msg = {"command": command, "parameters": parameters or {}, "get_image": True}
@@ -184,29 +164,23 @@ async def send_command_to_jetbot(command: str, parameters: Optional[Dict[str, An
             return image
     except websockets.exceptions.ConnectionClosedError as e:
         logger.error(f"JetBot connection closed unexpectedly: {e}")
-        return None  # Handle connection loss
+        return None
     except Exception as e:
         logger.error(f"JetBot command error: {e}")
         return None
 
-# --- Memory Management Functions ---
+# --- Memory ---
 def load_memory(filename: str = MEMORY_FILE) -> List[Dict[str, Any]]:
-    """
-    Loads conversation history from a JSON file.
-    """
     try:
         if os.path.exists(filename):
             with open(filename, "r", encoding="utf-8") as f:
-                return json.load(f)[-50:]  # Keep only the last 50 entries
+                return json.load(f)[-50:]
         return []
     except (FileNotFoundError, json.JSONDecodeError) as e:
         logger.warning(f"Error loading memory: {e}")
         return []
 
 def save_memory(memory_entry: Dict[str, Any], filename: str = MEMORY_FILE):
-    """
-    Saves a new memory entry to the conversation history file.
-    """
     memory = load_memory(filename)
     memory.append(memory_entry)
     try:
@@ -215,26 +189,20 @@ def save_memory(memory_entry: Dict[str, Any], filename: str = MEMORY_FILE):
     except OSError as e:
         logger.error(f"Error saving memory: {e}")
 
-# --- Main API Endpoint (/api/generate) ---
+# --- API Endpoint (/api/generate) ---
 @app.post("/api/generate")
 async def generate(request_data: OllamaRequest):
-    """
-    Handles incoming requests, interacts with the LLM and JetBot, and returns a response.
-    """
-    image_base64 = await send_command_to_jetbot("none", {}) # Get image *before* anything else
-    image_data = image_base64 if image_base64 else None
-
-     # Image Verification (Logging) - Keep this!
-    if image_data:
-        logger.info(f"Image data (first 100 chars): {image_data[:100]}...")
-
-    # Describe action takes precedence
+    # 1. Determine the action and get the initial image.
     if request_data.action == 'describe':
-        user_prompt = ""  # Empty prompt for describe
+        # Describe: Empty prompt, get image.
+        user_prompt = ""
+        image_base64 = await send_command_to_jetbot("none", {})
+        image_data = image_base64 if image_base64 else None
         gemma_response = await query_gemma3(user_prompt, image_data)
-        # We expect ONLY a describe command, so we use it directly.
+
+        # Expect ONLY a describe command.
         if gemma_response and gemma_response.get("commands"):
-            cmd = gemma_response["commands"][0]  # Directly access the first command
+            cmd = gemma_response["commands"][0]
             jetbot_command = cmd["command"]
             parameters = cmd["parameters"]
             tts_text = cmd["tts"]
@@ -242,53 +210,62 @@ async def generate(request_data: OllamaRequest):
             jetbot_command = "none"
             parameters = {}
             tts_text = "이미지 설명 생성에 실패했습니다."
+
+    elif request_data.action == "navigate" and request_data.direction_hint in JETBOT_COMMANDS:
+        # Predefined navigation command: Use the predefined command and parameters.
+        cmd_info = JETBOT_COMMANDS[request_data.direction_hint]
+        jetbot_command = cmd_info["command"]
+        parameters = cmd_info["parameters"].copy()
+        tts_text = cmd_info["tts"]
+
+        # Override parameters if provided in the request.
+        if request_data.speed is not None:
+            parameters["speed"] = request_data.speed
+        if request_data.duration is not None:
+            parameters["duration"] = request_data.duration
+        if request_data.angle is not None:
+            parameters["angle"] = request_data.angle
+
+        # Get the initial image *after* setting the command.
+        image_base64 = await send_command_to_jetbot("none", {})
+        image_data = image_base64
+
     else:
-        # Handle other actions (non-describe)
+        # Custom command or other actions: Use the prompt from the request.
         user_prompt = request_data.prompt
+        image_base64 = await send_command_to_jetbot("none", {}) # Get image *before* sending to Gemma
+        image_data = image_base64
         gemma_response = await query_gemma3(user_prompt, image_data)
         commands = gemma_response.get("commands", []) or [{"command": "none", "parameters": {}, "tts": "명령을 기다리는 중."}]
         cmd = commands[0]
-
         jetbot_command = cmd["command"]
         parameters = cmd["parameters"]
         tts_text = cmd["tts"]
 
 
-        if request_data.action == "navigate" and request_data.direction_hint in JETBOT_COMMANDS:
-            # Only override if gemma did *not* return 'describe'
-            if jetbot_command != "describe":
-                cmd_info = JETBOT_COMMANDS[request_data.direction_hint]
-                jetbot_command = cmd_info["command"]
-                parameters = cmd_info["parameters"].copy()
-                tts_text = cmd_info["tts"]
 
-    # Optional parameter overrides (speed, duration, angle)
-    if request_data.speed is not None:
-        parameters["speed"] = request_data.speed
-    if request_data.duration is not None:
-        parameters["duration"] = request_data.duration
-    if request_data.angle is not None:
-        parameters["angle"] = request_data.angle
+    # Log the image data for debugging.
+    if image_data:
+        logger.info(f"Image data (first 100 chars): {image_data[:100]}...")
 
-    # Execute the command on the JetBot and get the new image
+    # 2. Execute the command and get the new image.
     new_image_base64 = await send_command_to_jetbot(jetbot_command, parameters)
-    encoded_audio = await generate_tts(tts_text)  # Generate TTS from the response
+    encoded_audio = await generate_tts(tts_text)
 
-    # --- Prepare the API Response ---
-    # Include Cache-Control headers to prevent browser caching of the image
+    # 3. Prepare the response.
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
         "Expires": "0",
     }
     response = {
-        "response": tts_text,  # The text response (for display)
-        "jetbot_command": jetbot_command,  # The command sent to the JetBot
-        "image": "data:image/jpeg;base64," + (new_image_base64 or image_base64) if new_image_base64 or image_base64 else "",  #  image data
-        "audio": "data:audio/mp3;base64," + encoded_audio,  # The TTS audio data
+        "response": tts_text,
+        "jetbot_command": jetbot_command,
+        "image": "data:image/jpeg;base64," + (new_image_base64 or image_base64) if new_image_base64 or image_base64 else "",
+        "audio": "data:audio/mp3;base64," + encoded_audio,
     }
 
-    # --- Save to Memory ---
+    # 4. Save to memory.
     save_memory({
         "timestamp": time.time(),
         "prompt": request_data.prompt,
@@ -298,10 +275,9 @@ async def generate(request_data: OllamaRequest):
         "tts_text": tts_text,
     })
 
-    return JSONResponse(content=response, headers=headers)  # Return the JSON response
+    # 5. Return the response.
+    return JSONResponse(content=response, headers=headers)
 
-
-# --- Run the Application (using Uvicorn) ---
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)  # reload=False for debugging
