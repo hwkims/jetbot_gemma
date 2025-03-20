@@ -3,6 +3,7 @@ https://hwkims.github.io/jetbot_gemma/en
 ![image](https://github.com/user-attachments/assets/4313c582-b645-4e32-87a9-ebc5c39160f9)
 ![image](https://github.com/user-attachments/assets/0c078a02-c9ed-49d0-b6a5-742d18d7b933)
 ![image](https://github.com/user-attachments/assets/39508c17-8e4e-453e-a9ab-ac058975ea7f)
+![image](https://github.com/user-attachments/assets/3d1c9ce5-f69b-4afd-add9-255df124ce0b)
 
 
 # JetBot-Ollama-Control
