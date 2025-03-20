@@ -1,4 +1,7 @@
 https://hwkims.github.io/jetbot_gemma/en
+
+
+https://d1qx31qr3h6wln.cloudfront.net/publications/GR00T_1_Whitepaper.pdf
 ![image](https://github.com/user-attachments/assets/4e8d741b-b149-4111-8984-5a1b313bc314)
 ![image](https://github.com/user-attachments/assets/4313c582-b645-4e32-87a9-ebc5c39160f9)
 ![image](https://github.com/user-attachments/assets/0c078a02-c9ed-49d0-b6a5-742d18d7b933)
