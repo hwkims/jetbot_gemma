@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jetbot Control 🤖</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E🤖%3C/text%3E%3C/svg%3E">
+    <style>
+         * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: sans-serif; background-color: #f0f0f0; color: #333; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        h1 { font-size: 2em; margin-bottom: 0.5em; }
+        #webcam-feed { width: 100%; max-width: 600px; border: 2px solid #ddd; border-radius: 8px; margin-bottom: 1em; }
+        .controls, .autonomous-controls, .custom-command-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5em; margin-bottom: 1em; width: 100%; max-width: 600px; }
+        button, #iterations-input, #custom-command-input { padding: 0.5em 1em; border: 1px solid #ccc; border-radius: 4px; background-color: white; color: #333; font-size: 1em; }
+        button:hover { background-color: #eee; cursor: pointer; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #iterations-input { width: 4em; text-align: center; }
+        #custom-command-input { flex-grow: 1; }
+        #response-text { margin-bottom: 1em; padding: 0.5em; border: 1px solid #ccc; border-radius: 4px; width: 100%; max-width: 600px; text-align: center; }
+        #tts-player { width: 100%; max-width: 600px; }
+        #recording-indicator { color: red; margin-left: 0.5em; display: none; }
+        #recording-indicator.active { display: inline; }
+    </style>
+</head>
+<body>
+    <h1>Jetbot Control 🤖</h1>
+    <img id="webcam-feed" src="" alt="JetBot Webcam Feed">
+
+    <div class="controls">
+        <button id="forward-button">Forward</button>
+        <button id="backward-button">Backward</button>
+        <button id="left-button">Left</button>
+        <button id="right-button">Right</button>
+        <button id="stop-button">Stop</button>
+        <button id="describe-button">Describe</button>
+        <button id="voice-button">Voice Control</button>
+        <span id="recording-indicator">  🔴 Recording...</span>
+    </div>
+
+    <div class="autonomous-controls">
+        <label for="iterations-input">Iterations:</label>
+        <input type="number" id="iterations-input" value="10" min="1">
+        <button id="autonomous-button">Autonomous</button>
+    </div>
+
+    <div class="custom-command-group">
+        <input type="text" id="custom-command-input" placeholder="Enter custom command">
+        <button id="custom-command-button">Execute</button>
+    </div>
+
+    <div id="response-text">Jetbot Ready!</div>
+    <audio id="tts-player" controls></audio>
+     <audio id="ding-player" src="/static/ding.mp3" preload="auto"></audio>
+
+
+    <script>
+    const webcamFeed = document.getElementById('webcam-feed');
+    const responseText = document.getElementById('response-text');
+    const ttsPlayer = document.getElementById('tts-player');
+    const dingPlayer = document.getElementById('ding-player');
+    const iterationsInput = document.getElementById('iterations-input');
+    const autonomousButton = document.getElementById('autonomous-button');
+    const forwardButton = document.getElementById('forward-button');
+    const backwardButton = document.getElementById('backward-button');
+    const leftButton = document.getElementById('left-button');
+    const rightButton = document.getElementById('right-button');
+    const stopButton = document.getElementById('stop-button');
+    const describeButton = document.getElementById('describe-button');
+    const voiceButton = document.getElementById('voice-button');
+    const customCommandInput = document.getElementById('custom-command-input');
+    const customCommandButton = document.getElementById('custom-command-button');
+    const recordingIndicator = document.getElementById('recording-indicator');
+
+    let websocket = null; // WebSocket connection to FastAPI
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isProcessing = false;
+
+        // --- Helper Functions ---
+      function setControlsEnabled(enabled) {
+          const buttons = document.querySelectorAll('button');
+          buttons.forEach(button => {
+              button.disabled = !enabled;
+          });
+          iterationsInput.disabled = !enabled;
+          customCommandInput.disabled = !enabled;
+          isProcessing = !enabled;
+      }
+
+    function connectWebSocket() {
+        websocket = new WebSocket("ws://localhost:8000/ws/client"); //  Connect to FastAPI
+
+        websocket.onopen = () => {
+            console.log("WebSocket connected!");
+            setControlsEnabled(true);
+            responseText.textContent = "Jetbot Ready!";
+        };
+
+        websocket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.image) {
+                webcamFeed.src = "data:image/jpeg;base64," + data.image;
+            }
+            if (data.response) {
+              responseText.textContent = data.response
+            }
+            if (data.audio) {
+              ttsPlayer.src = data.audio;
+              ttsPlayer.play()
+            }
+
+            if(data.error){
+                responseText.textContent = data.error;
+            }
+        };
+
+        websocket.onclose = () => {
+            console.log("WebSocket closed. Attempting to reconnect...");
+            setControlsEnabled(false);
+            responseText.textContent = "Reconnecting to Jetbot...";
+            setTimeout(connectWebSocket, 5000);  // Retry after 5 seconds
+        };
+
+        websocket.onerror = (error) => {
+            console.error("WebSocket error:", error);
+            responseText.textContent = "WebSocket error!";
+        };
+    }
+
+  async function sendCommand(command, parameters = {}) {
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        const message = { command: command, parameters: parameters };
+        websocket.send(JSON.stringify(message));
+    } else {
+        console.error("WebSocket not connected. Cannot send command.");
+        responseText.textContent = "Jetbot not connected!"; // Update UI
+    }
+}
+
+
+    async function sendCustomCommand(command) {
+         if (websocket && websocket.readyState === WebSocket.OPEN && command.trim() !== "") {
+             const message = {"command": "custom", parameters: {text: command.trim()}};
+             websocket.send(JSON.stringify(message));
+         }
+    }
+
+    async function sendVoiceCommand(command) {
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        const message = { command: command};
+        websocket.send(JSON.stringify(message));
+      } else {
+        console.error("WebSocket not connected. Cannot send command.");
+        responseText.textContent = "Jetbot not connected!"; // Update UI
+      }
+    }
+
+
+    async function startAutonomous() {
+        if (isProcessing) return;
+        const iterations = parseInt(iterationsInput.value, 10) || 10; // Get iterations
+        dingPlayer.play().catch(e => console.error("Ding play error:", e));
+        setControlsEnabled(false);
+
+        try {
+          const response = await fetch("/api/autonomous", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: "Start autonomous navigation.", iterations: iterations, delay: 0.1 }) // Use iterations
+          });
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          const data = await response.json(); // Expecting JSON.
+
+
+        } catch (error) {
+          console.error("Error during autonomous control:", error);
+          responseText.textContent = `Error: ${error.message}`;
+        } finally {
+          setControlsEnabled(true);
+
+        }
+    }
+
+    async function sendSTTRequest(audioBlob) {
+      try {
+        const response = await fetch("/api/stt", {
+          method: "POST",
+          body: audioBlob, // Send the blob directly
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.text) {
+            document.getElementById("custom-command-input").value = data.text;
+            responseText.textContent = "Recognized Text: " + data.text
+        } else if (data.error){
+            responseText.textContent = "Error " + data.error
+        }
+
+      } catch (error) {
+        console.error("Error:", error);
+         responseText.textContent = "Error " + error
+      }
+    }
+
+
+    // --- Event Listeners ---
+
+    forwardButton.addEventListener('click', () => sendCommand("forward"));
+    backwardButton.addEventListener('click', () => sendCommand("backward"));
+    leftButton.addEventListener('click', () => sendCommand("left"));
+    rightButton.addEventListener('click', () => sendCommand("right"));
+    stopButton.addEventListener('click', () => sendCommand("stop"));
+    describeButton.addEventListener('click', () => sendCommand("describe"));
+
+
+    customCommandButton.addEventListener('click', () => {
+        const commandText = customCommandInput.value;
+        sendCustomCommand(commandText);
+    });
+
+    autonomousButton.addEventListener('click', startAutonomous);
+
+      voiceButton.addEventListener('click', () => {
+
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    mediaRecorder = new MediaRecorder(stream);
+
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        audioChunks = []; // Clear chunks
+                        sendSTTRequest(audioBlob)
+                        recordingIndicator.classList.remove('active');
+
+                    };
+
+                    mediaRecorder.start();
+                    recordingIndicator.classList.add('active');
+                    responseText.textContent = "Listening... Press again to stop.";
+
+
+                    // Stop recording on second click
+                    voiceButton.onclick = () => {
+                      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                        mediaRecorder.stop();
+                        stream.getTracks().forEach(track => track.stop()); // Stop stream
+                        voiceButton.onclick = null; // Remove event
+                      }
+                    }
+
+                })
+                .catch(err => {
+                    console.error('Error accessing microphone:', err);
+                    responseText.textContent = "Could not access microphone.";
+                });
+        } else {
+            console.error('getUserMedia not supported.');
+            responseText.textContent = "Voice control not supported."
+        }
+    });
+
+    // --- Initialization ---
+    connectWebSocket();  // Connect on page load
+
+    </script>
+</body>
+</html>
