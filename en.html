@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JetBot Control with Gemma 3 and FastAPI</title>
+    <style>
+        /* Apple-inspired Design */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            margin: 0;
+            padding: 0;
+            background: #f0f0f0; /* Light gray background */
+            color: #333; /* Dark gray text */
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        h1, h2, h3 {
+            color: #111; /* Slightly darker for headings */
+            font-weight: 600;
+            margin-bottom: 0.7em;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            text-align: center;
+            margin-bottom: 1em;
+        }
+
+        h2 {
+            font-size: 1.8em;
+            margin-top: 2em;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 0.3em;
+        }
+
+        h3 {
+            font-size: 1.3em;
+        }
+
+        p {
+            margin-bottom: 1em;
+            font-size: 1.1em;
+        }
+
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            background-color: rgba(27,31,35,.05);
+            border-radius: 6px;
+            font-size: 90%;
+            margin: 0;
+            padding: .2em .4em;
+            color: #111;
+        }
+        /* Pipeline Diagram Styles */
+        .pipeline {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 40px 0;
+            width: 100%;
+            position: relative; /* For absolute positioning of lines */
+        }
+
+        .pipeline-step {
+            background: #fff;
+            border: 2px solid #ddd;
+            border-radius: 15px; /* Rounded corners */
+            padding: 20px;
+            text-align: center;
+            width: 22%; /* Adjust as needed */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            position: relative;
+            z-index: 2;
+        }
+        .pipeline-step:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+        .pipeline-step h3 {
+            margin:0;
+            margin-bottom: 10px;
+
+        }
+
+        /* Arrows (using SVG) */
+        .arrow {
+            width: 18%; /* Space for arrows */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #888;
+            font-size: 2em;
+            position: relative;
+            z-index: 1; /* Arrows behind steps */
+        }
+
+
+       /* Horizontal Line (::before pseudo-element) */
+        .pipeline::before {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: #ddd;
+            transform: translateY(-50%);
+            z-index: 1; /* Line behind the steps */
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        }
+        .section.highlight {
+            border-left: 4px solid #007bff; /* Primary color highlight */
+
+        }
+        .section-title{
+            margin-top:0;
+        }
+
+        /* List styles */
+        ul {
+            list-style: disc;
+            margin-left: 20px;
+            margin-bottom: 1em;
+        }
+        ul li{
+            margin-bottom: 0.4em;
+        }
+        /* Callout box */
+        .callout {
+            background-color: #e9f8ff; /* Light blue background */
+            border-left: 4px solid #007bff; /* Blue border */
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .callout p {
+            margin: 0;
+            font-size: 1em;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>JetBot Control with Gemma 3 and FastAPI</h1>
+
+        <p>This project demonstrates how to control a JetBot using voice and text commands, enhanced by the image understanding capabilities of Google's Gemma 3 language model. The system is built with a modern, robust architecture using FastAPI, websockets, and `edge-tts`.</p>
+
+        <div class="pipeline">
+            <div class="pipeline-step">
+                <h3>User Input</h3>
+                <p>(Web Interface)</p>
+            </div>
+            <div class="arrow">→</div>
+            <div class="pipeline-step">
+                <h3>FastAPI Server</h3>
+                <p>(main.py)</p>
+            </div>
+             <div class="arrow">→</div>
+            <div class="pipeline-step">
+                <h3>Ollama (Gemma 3)</h3>
+                <p>(LLM)</p>
+            </div>
+             <div class="arrow">→</div>
+            <div class="pipeline-step">
+                <h3>JetBot</h3>
+                <p>(jetbot_server.py)</p>
+            </div>
+        </div>
+
+
+        <div class="section highlight">
+            <h2 class="section-title">Project Overview</h2>
+            <p>This system allows you to interact with a JetBot in a natural and intuitive way.  You can issue commands via text or voice, and the JetBot will respond accordingly.  The Gemma 3 language model provides image understanding, allowing the JetBot to describe its surroundings.</p>
+              <div class="callout">
+                <p><strong>Key Feature:</strong> The system is designed to be robust, with automatic reconnection to the JetBot in case of network interruptions.</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">Components</h2>
+            <ul>
+                <li><strong>Web Interface (<code>static/index.html</code>):</strong>  Provides buttons for basic control, a text input field for custom commands, voice input capabilities, and a live camera feed.</li>
+                <li><strong>FastAPI Server (<code>main.py</code>):</strong>  The backend server that handles user input, communicates with Ollama and the JetBot, and generates TTS responses.</li>
+                <li><strong>JetBot Server (<code>jetbot_server.py</code>):</strong>  Runs on the JetBot, controls the motors, captures images, and communicates with the FastAPI server via websockets.</li>
+                <li><strong>Ollama (with Gemma 3):</strong> The language model server that processes natural language and image data.</li>
+            </ul>
+        </div>
+
+
+
+        <div class="section">
+            <h2 class="section-title">Setup</h2>
+            <ol>
+                <li><strong>Prerequisites:</strong>
+                    <ul>
+                        <li>A fully assembled and configured JetBot.</li>
+                        <li>Ollama installed and running with the `gemma3:4b` model.</li>
+                        <li>Python 3.6+ on both your development machine and the JetBot.</li>
+                        <li>Network connectivity between your development machine and the JetBot.</li>
+                        <li>Install `edge-tts` and check available voices with `edge-tts --list-voices` command.</li>
+                    </ul>
+                </li>
+                <li><strong>Clone the Repository:</strong>
+                    <ul>
+                        <li><code>git clone https://github.com/hwkims/jetbot_gemma.git</code></li>
+                        <li><code>cd jetbot_gemma</code></li>
+                    </ul>
+                </li>
+                <li><strong>Install Dependencies:</strong>
+                     <ul>
+                        <li>On your development machine: <code>pip install fastapi uvicorn httpx websockets edge-tts python-multipart pydantic</code></li>
+                        <li>On the JetBot: <code>pip install websockets</code></li>
+                    </ul>
+                </li>
+                <li><strong>Create <code>static</code> Directory:</strong> Create a `static` folder in the project root.</li>
+                <li><strong>Place Files:</strong>
+                    <ul>
+                        <li>Move <code>index.html</code>, and <code>ding.mp3</code> into the <code>static</code> directory.</li>
+                        <li>Copy <code>jetbot_server.py</code> to your JetBot.</li>
+                    </ul>
+                </li>
+                <li><strong>Configuration:</strong>
+                    <ul>
+                        <li>Edit <code>main.py</code>: Update <code>OLLAMA_HOST</code>, <code>MODEL_NAME</code>, <code>JETBOT_WEBSOCKET_URL</code>, and <code>TTS_VOICE</code>.</li>
+                        <li>Edit <code>jetbot_server.py</code>: Verify <code>WEBSOCKET_PORT</code>.</li>
+                    </ul>
+                </li>
+            </ol>
+        </div>
+
+        <div class="section">
+           <h2 class="section-title">Running the Application</h2>
+            <ol>
+                <li><strong>Start JetBot Server (on JetBot):</strong>
+                <p><code>python jetbot_server.py</code></p>
+                </li>
+                <li><strong>Start FastAPI Server (on Development Machine):</strong>
+                <p><code>uvicorn main:app --host 0.0.0.0 --port 8000 --reload</code></p>
+                </li>
+                 <li><strong>Access the Web Interface:</strong>
+                <p>Open a web browser and go to <code>http://localhost:8000</code>.</p>
+                </li>
+            </ol>
+        </div>
+
+
+        <div class="section">
+            <h2 class="section-title">Troubleshooting</h2>
+            <ul>
+                <li><strong>Connection Issues:</strong> Ensure the JetBot server is running, the IP address is correct, and there are no network problems.</li>
+                <li><strong>Image Not Updating:</strong> Clear your browser cache or try a hard refresh (Ctrl+Shift+R or Cmd+Shift+R).</li>
+                <li><strong>Gemma 3 Issues:</strong> Verify Ollama is running and the model is loaded. Check the prompts in <code>main.py</code>.</li>
+                <li><strong>TTS Problems:</strong> Confirm `edge-tts` is installed and the voice name in `main.py` is valid.</li>
+                 <li><strong>JetBot Not Moving:</strong> Make sure the `jetbot` package is properly installed on your Jetbot, and check for errors during robot initialization.</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">Code Overview</h2>
+             <ul>
+                <li><strong><code>main.py</code>:</strong> FastAPI server logic, handling user input, Ollama communication, JetBot communication, and TTS.</li>
+                <li><strong><code>jetbot_server.py</code>:</strong> JetBot control, image capture, and WebSocket communication.</li>
+                <li><strong><code>static/index.html</code>:</strong> Web interface for user interaction.</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
