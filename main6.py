@@ -88,23 +88,47 @@ async def generate_tts(text: str) -> str:
         return await generate_tts("음성 생성 중 오류가 발생했습니다.")
 
 # --- Gemma 3 Interaction ---
-async def query_gemma3(prompt: str, image_data: Optional[str] = None) -> Dict[str, Any]:
-    if image_data:
-        # Image-based prompt (includes user prompt for context)
+async def query_gemma3(prompt: str, image_data: Optional[str] = None, action: Optional[str] = None) -> Dict[str, Any]:
+    if action == 'describe':
+        # Image description prompt (Object-focused, examples, NO navigation)
+
+        base_prompt = (
+            f"다음은 base64로 인코딩된 이미지입니다: {image_data} "
+            "이미지에 있는 모든 물체를 최대한 자세하고 정확하게 설명해주세요. "
+            "다음 사항들을 반드시 포함해야 합니다:\n"
+            "- 각 물체의 종류 (예: 키보드, 책, 컵, 사람, 강아지 등).\n"
+            "- 각 물체의 색상.\n"
+            "- 각 물체의 형태 (예: 직사각형, 원형, 둥근 모서리 등).\n"
+            "- 각 물체의 상대적인 위치 (예: 이미지 중앙, 왼쪽 상단, ~옆에, ~위에 등).\n"
+            "- 이미지에 텍스트가 있다면, 텍스트의 내용, 글꼴 스타일 (가능하다면), 색상, 위치.\n"
+            "다음은 설명 예시입니다:\n"
+            "예시 1: '이미지 중앙에 흰색 키보드가 있습니다. 키보드 위에는 검은색 글자가 있습니다.'\n"
+            "예시 2: '이미지 왼쪽에 갈색 책상이 있고, 책상 위에 흰색 종이가 놓여 있습니다. 종이 옆에는 검은색 펜이 있습니다.'\n"
+            "예시 3: '이미지에 \\\"Hello, World!\\\"라는 텍스트가 흰색 글꼴로 중앙에 있습니다.'\n"
+            "예시 4: '이미지 중앙에 갈색 강아지가 앉아 있습니다. 강아지 앞에는 파란색 공이 있습니다. 배경은 흐릿한 잔디밭입니다.'\n"
+            "최대한 객관적이고 상세하게 묘사해주세요.  분위기나 느낌에 대한 설명은 하지 마세요. "
+            "절대로 'forward', 'backward', 'left', 'right', 'stop', 'dance' 명령을 제안하지 마세요. 오직 'describe'만 사용하세요."
+        )
+        instruction = (
+            "이제, 위에서 생성한 이미지 설명을 'tts' 필드에 넣고, 'command' 필드에는 'describe'를 넣어 JSON 형식으로 응답해주세요. "
+            "다른 행동을 제안하지 마세요. 오직 이미지 설명만 'tts'에 넣어야 합니다. "
+            "다음 형식을 엄격히 준수해야 합니다: {'commands': [{'command': 'describe', 'parameters': {}, 'tts': '이미지 설명'}]}"
+        )
+    elif image_data:
+        # Image-based prompt + user prompt (for navigation and other actions WITH image)
         base_prompt = (
             f"다음은 base64로 인코딩된 이미지입니다: {image_data} "
             f"사용자 요청: '{prompt}'.\n"  # Include user's prompt
-            "이미지와 사용자 요청을 고려하여 젯봇이 수행할 수 있는 적절한 행동을 제안해주세요. "
+            "이미지와 사용자 요청을 고려하여 젯봇이 수행할 수 있는 적절한 행동을 '하나만' 제안해주세요. "
             "다음 사항들을 고려해주세요:\n"
             "- 이미지에 있는 모든 물체의 종류, 색상, 형태, 위치.\n"
             "- 배경, 텍스트(있는 경우).\n"
             "명령어는 'forward', 'backward', 'left', 'right', 'stop', 'dance', 'describe' 중 하나여야 합니다.\n"
             "'forward', 'backward', 'left', 'right' 명령어의 경우, 'speed'는 0.3에서 0.7 사이, 'duration'은 0.5에서 3.0 사이의 값이어야 합니다.\n"
-            "최대한 구체적인 응답을 제공하고, 이미지에 대한 설명이 필요한 경우 'describe' 명령을 사용하세요. "
-            "응답은 다음 JSON 형식을 엄격히 준수해야 합니다: {'commands': [{'command': '명령어', 'parameters': {'speed': 값, 'duration': 값}, 'tts': '음성 메시지'}]}"
-
+             "tts 필드에는 젯봇이 수행할 행동에 대한 설명을 넣어주세요. \n"
+            "응답은 다음 JSON 형식을 엄격히 준수해야 합니다: {'commands': [{'command': '명령어', 'parameters': {'speed': 값, 'duration': 값}, 'tts': '설명'}]}"
         )
-        instruction = "" # No separate instruction, all in base_prompt
+        instruction = ""
 
     else:
         # No-image prompt (for text-only commands)
@@ -183,65 +207,48 @@ def save_memory(memory_entry: Dict[str, Any], filename: str = MEMORY_FILE):
 # --- API Endpoint (/api/generate) ---
 @app.post("/api/generate")
 async def generate(request_data: OllamaRequest):
-    # 1. Get the initial image.  We *always* get the image.
     image_base64 = await send_command_to_jetbot("none", {})
     image_data = image_base64 if image_base64 else None
     if image_data:
         logger.info(f"Image data (first 100 chars): {image_data[:100]}...")
 
-    # 2. Determine the action and prepare the prompt.
+    # --- Main Logic ---
     if request_data.action == 'describe':
-        # Describe: Empty prompt, use image data.
+        # Describe Action: Force 'describe' command, use image data, empty prompt.
         user_prompt = ""
-        gemma_response = await query_gemma3(user_prompt, image_data)
-        # Expect ONLY a describe command.
+        gemma_response = await query_gemma3(user_prompt, image_data, action='describe')
         if gemma_response and gemma_response.get("commands"):
             cmd = gemma_response["commands"][0]
             jetbot_command = cmd["command"]
             parameters = cmd["parameters"]
             tts_text = cmd["tts"]
-        else:
+        else:  # Fallback if Gemma fails
             jetbot_command = "none"
             parameters = {}
             tts_text = "이미지 설명 생성에 실패했습니다."
 
-    else:
-        #  "navigate" or other actions.
-        user_prompt = request_data.prompt  # Always use the user's prompt
+    elif request_data.action == "navigate" and request_data.direction_hint in JETBOT_COMMANDS:
+        # Predefined Navigation Command: Use hint, but allow Gemma to override.
+        cmd_info = JETBOT_COMMANDS[request_data.direction_hint]
+        default_command = cmd_info["command"]
+        default_parameters = cmd_info["parameters"].copy()
+        default_tts = cmd_info["tts"]
 
-        # Check for predefined navigation hints.
-        if request_data.action == "navigate" and request_data.direction_hint in JETBOT_COMMANDS:
-            # Get the default command/params for this hint.
-            cmd_info = JETBOT_COMMANDS[request_data.direction_hint]
-            default_command = cmd_info["command"]
-            default_parameters = cmd_info["parameters"].copy()
-            default_tts = cmd_info["tts"]
+        # Query Gemma with image and user prompt (which is from the button).
+        gemma_response = await query_gemma3(request_data.prompt, image_data)
 
-            #  Send to Gemma 3 *with* the image *and* the user's prompt.
-            gemma_response = await query_gemma3(user_prompt, image_data)
-
-            #  If Gemma 3 returns a command, use it.  Otherwise, use the default.
-            if gemma_response and gemma_response.get("commands") and len(gemma_response.get("commands")) > 0 :
-                cmd = gemma_response["commands"][0]
-                jetbot_command = cmd["command"]
-                parameters = cmd["parameters"]
-                tts_text = cmd["tts"]
-            else:
-                jetbot_command = default_command
-                parameters = default_parameters
-                tts_text = default_tts
-        else:
-            # Not a predefined navigation command, send to gemma
-            gemma_response = await query_gemma3(user_prompt, image_data)
-            commands = gemma_response.get("commands", []) or [{"command": "none", "parameters": {}, "tts": "명령을 기다리는 중."}]
-            cmd = commands[0]
+        # If Gemma provides a valid command, use it; otherwise, use defaults.
+        if gemma_response and gemma_response.get("commands") and len(gemma_response.get("commands")) > 0:
+            cmd = gemma_response["commands"][0]
             jetbot_command = cmd["command"]
             parameters = cmd["parameters"]
             tts_text = cmd["tts"]
+        else:
+            jetbot_command = default_command
+            parameters = default_parameters
+            tts_text = default_tts
 
-
-
-        # Override parameters if provided in the request.  This happens *after* Gemma 3.
+        # Apply parameter overrides (speed, duration, angle) from the request.
         if request_data.speed is not None:
             parameters["speed"] = request_data.speed
         if request_data.duration is not None:
@@ -249,12 +256,21 @@ async def generate(request_data: OllamaRequest):
         if request_data.angle is not None:
             parameters["angle"] = request_data.angle
 
+    else:
+        # Custom command or other actions: Use the prompt from the request.
+        gemma_response = await query_gemma3(request_data.prompt, image_data)
+        commands = gemma_response.get("commands", []) or [{"command": "none", "parameters": {}, "tts": "명령을 기다리는 중."}]
+        cmd = commands[0]
+        jetbot_command = cmd["command"]
+        parameters = cmd["parameters"]
+        tts_text = cmd["tts"]
 
-    # 3. Execute the command and get the new image.
+
+    # --- Execute Command and Get New Image ---
     new_image_base64 = await send_command_to_jetbot(jetbot_command, parameters)
     encoded_audio = await generate_tts(tts_text)
 
-    # 4. Prepare the response.
+    # --- Prepare Response ---
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache",
@@ -267,7 +283,7 @@ async def generate(request_data: OllamaRequest):
         "audio": "data:audio/mp3;base64," + encoded_audio,
     }
 
-    # 5. Save to memory.
+    # --- Save to Memory ---
     save_memory({
         "timestamp": time.time(),
         "prompt": request_data.prompt,
@@ -277,7 +293,6 @@ async def generate(request_data: OllamaRequest):
         "tts_text": tts_text,
     })
 
-    # 6. Return the response.
     return JSONResponse(content=response, headers=headers)
 
 if __name__ == "__main__":
