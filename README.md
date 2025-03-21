@@ -17,6 +17,7 @@ https://d1qx31qr3h6wln.cloudfront.net/publications/GR00T_1_Whitepaper.pdf
 ![스크린샷(8)](https://github.com/user-attachments/assets/aa86eb50-592b-4eec-8f4b-6c5fcd727816)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![image](https://github.com/user-attachments/assets/597e2cb3-72e7-4d15-b06a-e934803d8c5b)
 
 **JetBot을 Ollama, FastAPI, Edge TTS를 이용하여 제어하는 프로젝트입니다.**  JetBot의 카메라 피드를 실시간으로 받아 Ollama를 통해 분석하고,  분석 결과에 따라 JetBot을 제어하거나 사용자에게 음성으로 상황을 설명합니다.
 
